@@ -4,6 +4,7 @@
  */
 
 import * as client from "../api/client.js"
+import { parseDocumentation, formatForAI, calculateQualityScore } from "../utils/html-parser.js"
 
 /**
  * Tool definition for getting entry content
@@ -11,7 +12,7 @@ import * as client from "../api/client.js"
  */
 export const definition = {
   name: "devdocs_get_entry",
-  description: "Get full content of a documentation entry",
+  description: "Get full content of a documentation entry with structured parsing",
   inputSchema: {
     type: "object",
     properties: {
@@ -22,27 +23,15 @@ export const definition = {
       path: {
         type: "string",
         description: "Entry path (e.g., 'Global_Objects/Array/map')"
+      },
+      format: {
+        type: "string",
+        enum: ["ai", "text", "json", "raw"],
+        description: "Output format: 'ai' (structured like Context7), 'text' (plain), 'json' (structured), 'raw' (HTML)"
       }
     },
     required: ["doc", "path"]
   }
-}
-
-/** @type {number} Maximum content length to return */
-const MAX_CONTENT_LENGTH = 10000
-
-/**
- * Strips HTML tags and converts to plain text
- * @param {string} html - HTML content
- * @returns {string} Plain text
- */
-function stripHtml(html) {
-  return html
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
 }
 
 /**
@@ -50,21 +39,60 @@ function stripHtml(html) {
  * @param {Object} args - Tool arguments
  * @param {string} args.doc - Documentation slug
  * @param {string} args.path - Entry path
+ * @param {string} [args.format='ai'] - Output format
  * @returns {Promise<import('@modelcontextprotocol/sdk/types.js').CallToolResult>} Tool result
  */
 export async function handler(args) {
-  const { doc, path } = args
+  const { doc, path, format = "ai" } = args
   
-  const content = await client.getDocEntry(doc, path)
-  const plainText = stripHtml(content)
+  const html = await client.getDocEntry(doc, path)
   
-  const truncated = plainText.length > MAX_CONTENT_LENGTH
-  const text = plainText.slice(0, MAX_CONTENT_LENGTH) + (truncated ? "\n\n... (truncated)" : "")
+  if (format === "raw") {
+    return {
+      content: [{
+        type: "text",
+        text: html
+      }]
+    }
+  }
+  
+  const parsed = parseDocumentation(html)
+  const qualityScore = calculateQualityScore(parsed)
+  
+  if (format === "json") {
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({ ...parsed, qualityScore }, null, 2)
+      }],
+      _meta: { qualityScore, doc, path }
+    }
+  }
+  
+  if (format === "ai") {
+    const formatted = formatForAI(parsed)
+    return {
+      content: [{
+        type: "text",
+        text: `${formatted}\n\n---\nQuality Score: ${qualityScore}/100`
+      }],
+      _meta: { qualityScore, doc, path, title: parsed.title }
+    }
+  }
+  
+  const plainText = html
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 10000)
   
   return {
     content: [{
       type: "text",
-      text
-    }]
+      text: plainText
+    }],
+    _meta: { qualityScore, doc, path, title: parsed.title }
   }
 }

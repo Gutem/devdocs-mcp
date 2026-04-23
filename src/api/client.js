@@ -3,11 +3,18 @@
  * @module api/client
  */
 
+import { readFile, access } from "fs/promises"
+import { join } from "path"
+import { homedir } from "os"
+
 /** @type {string} Base URL for DevDocs main site */
 const BASE_URL = "https://devdocs.io"
 
 /** @type {string} Base URL for DevDocs documentation content */
 const DOCS_URL = "https://documents.devdocs.io"
+
+/** @type {string} Cache directory for offline docs */
+const CACHE_DIR = join(homedir(), ".cache", "devdocs-mcp")
 
 /** @type {Map<string, {data: any, timestamp: number}>} In-memory cache */
 const cache = new Map()
@@ -108,22 +115,43 @@ export async function getDocIndex(slug) {
  * Gets the HTML content of a documentation entry
  * @param {string} slug - Documentation slug (e.g., "javascript")
  * @param {string} path - Entry path (e.g., "Global_Objects/Array/map")
+ * @param {Object} [options] - Options
+ * @param {boolean} [options.preferOffline=true] - Prefer offline cache
  * @returns {Promise<string>} HTML content
  * @throws {Error} If entry not found
  * @example
  * const html = await getDocEntry('javascript', 'Global_Objects/Array/map')
  */
-export async function getDocEntry(slug, path) {
+export async function getDocEntry(slug, path, options = {}) {
+  const { preferOffline = true } = options
   const normalizedPath = path.toLowerCase()
   
+  // Check in-memory cache first
   let db = docDbCache.get(slug)
+  
   if (!db) {
-    const response = await global.fetch(`${DOCS_URL}/${slug}/db.json`)
-    if (!response.ok) {
-      throw new Error(`Documentation not found: ${slug}`)
+    // Try offline cache first if preferred
+    if (preferOffline) {
+      try {
+        const offlinePath = join(CACHE_DIR, `${slug}-db.json`)
+        await access(offlinePath)
+        const offlineContent = await readFile(offlinePath, "utf8")
+        db = JSON.parse(offlineContent)
+        docDbCache.set(slug, db)
+      } catch {
+        // Offline not available, continue to online
+      }
     }
-    db = await response.json()
-    docDbCache.set(slug, db)
+    
+    // Fetch from online if not in cache
+    if (!db) {
+      const response = await global.fetch(`${DOCS_URL}/${slug}/db.json`)
+      if (!response.ok) {
+        throw new Error(`Documentation not found: ${slug}`)
+      }
+      db = await response.json()
+      docDbCache.set(slug, db)
+    }
   }
   
   const content = db[normalizedPath]

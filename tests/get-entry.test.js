@@ -19,10 +19,19 @@ describe("get-entry tool", () => {
       expect(getEntry.definition.inputSchema.required).toContain("doc")
       expect(getEntry.definition.inputSchema.required).toContain("path")
     })
+
+    it("should have format parameter with options", () => {
+      const formatProp = getEntry.definition.inputSchema.properties.format
+      expect(formatProp).toBeDefined()
+      expect(formatProp.enum).toContain("ai")
+      expect(formatProp.enum).toContain("text")
+      expect(formatProp.enum).toContain("json")
+      expect(formatProp.enum).toContain("raw")
+    })
   })
 
   describe("handler", () => {
-    it("should return entry content", async () => {
+    it("should return structured AI format by default", async () => {
       mock.module("../src/api/client.js", () => ({
         getDocEntry: mock(() => Promise.resolve("<h1>Array.map</h1><p>Description</p>"))
       }))
@@ -33,57 +42,58 @@ describe("get-entry tool", () => {
       })
       
       expect(result.content[0].type).toBe("text")
-      expect(result.content[0].text).toContain("Array.map")
+      expect(result.content[0].text).toContain("Quality Score")
+      expect(result._meta.qualityScore).toBeDefined()
     })
 
-    it("should strip HTML tags", async () => {
+    it("should return raw HTML with format=raw", async () => {
       mock.module("../src/api/client.js", () => ({
-        getDocEntry: mock(() => Promise.resolve("<script>alert('x')</script><h1>Title</h1>"))
+        getDocEntry: mock(() => Promise.resolve("<h1>Array.map</h1><p>Description</p>"))
       }))
 
       const result = await getEntry.handler({
         doc: "javascript",
-        path: "test"
+        path: "test",
+        format: "raw"
       })
       
-      expect(result.content[0].text).not.toContain("<script>")
-      expect(result.content[0].text).not.toContain("<h1>")
-      expect(result.content[0].text).toContain("Title")
+      expect(result.content[0].text).toContain("<h1>")
     })
 
-    it("should strip style tags", async () => {
+    it("should return plain text with format=text", async () => {
       mock.module("../src/api/client.js", () => ({
         getDocEntry: mock(() => Promise.resolve("<style>.foo{}</style><p>Content</p>"))
       }))
 
       const result = await getEntry.handler({
         doc: "javascript",
-        path: "test"
+        path: "test",
+        format: "text"
       })
       
       expect(result.content[0].text).not.toContain("<style>")
       expect(result.content[0].text).toContain("Content")
     })
 
-    it("should truncate long content", async () => {
-      const longContent = "<p>" + "x".repeat(15000) + "</p>"
-      
+    it("should return JSON with format=json", async () => {
       mock.module("../src/api/client.js", () => ({
-        getDocEntry: mock(() => Promise.resolve(longContent))
+        getDocEntry: mock(() => Promise.resolve("<h1>Array.map</h1><p>Description</p><pre data-language=\"js\">code</pre>"))
       }))
 
       const result = await getEntry.handler({
         doc: "javascript",
-        path: "test"
+        path: "test",
+        format: "json"
       })
       
-      expect(result.content[0].text).toContain("truncated")
-      expect(result.content[0].text.length).toBeLessThan(15000)
+      const data = JSON.parse(result.content[0].text)
+      expect(data.title).toBeDefined()
+      expect(data.qualityScore).toBeDefined()
     })
 
-    it("should not truncate short content", async () => {
+    it("should include quality score in metadata", async () => {
       mock.module("../src/api/client.js", () => ({
-        getDocEntry: mock(() => Promise.resolve("<p>Short content</p>"))
+        getDocEntry: mock(() => Promise.resolve("<h1>Array.map</h1><p>Description</p>"))
       }))
 
       const result = await getEntry.handler({
@@ -91,7 +101,8 @@ describe("get-entry tool", () => {
         path: "test"
       })
       
-      expect(result.content[0].text).not.toContain("truncated")
+      expect(result._meta.qualityScore).toBeGreaterThanOrEqual(0)
+      expect(result._meta.qualityScore).toBeLessThanOrEqual(100)
     })
 
     it("should handle entry not found", async () => {
