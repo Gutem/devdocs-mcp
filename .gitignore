@@ -4,3 +4,4 @@ bun.lockb
 *.log
 .env
 .env.local
+AGENTS.md
