@@ -1,0 +1,47 @@
+{
+  "name": "@gutem/devdocs-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for DevDocs.io - API Documentation Browser",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "devdocs-mcp": "./src/index.js"
+  },
+  "scripts": {
+    "start": "bun run src/index.js",
+    "test": "bun test",
+    "lint": "biome check .",
+    "format": "biome format . --write"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "devdocs",
+    "documentation",
+    "api",
+    "ai",
+    "llm"
+  ],
+  "author": "gutem",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gutem/devdocs-mcp"
+  },
+  "bugs": {
+    "url": "https://github.com/gutem/devdocs-mcp/issues"
+  },
+  "homepage": "https://github.com/gutem/devdocs-mcp#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "src/**/*",
+    "README.md",
+    "LICENSE"
+  ]
+}
