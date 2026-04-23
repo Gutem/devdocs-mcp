@@ -4,6 +4,7 @@
  */
 
 import * as client from "../api/client.js"
+import { search, normalizeString } from "../utils/search.js"
 
 /**
  * Tool definition for searching documentation
@@ -11,18 +12,18 @@ import * as client from "../api/client.js"
  */
 export const definition = {
   name: "devdocs_search",
-  description: "Search for entries within DevDocs documentation",
+  description: "Search for entries within DevDocs documentation with fuzzy matching and scoring",
   inputSchema: {
     type: "object",
     properties: {
       query: {
         type: "string",
-        description: "Search term"
+        description: "Search term (supports fuzzy matching)"
       },
       docs: {
         type: "array",
         items: { type: "string" },
-        description: "Array of doc slugs to search in (default: all)"
+        description: "Array of doc slugs to search in (default: searches most relevant docs)"
       },
       limit: {
         type: "number",
@@ -39,6 +40,7 @@ export const definition = {
  * @property {string} path - Entry path
  * @property {string} doc - Documentation slug
  * @property {string} [type] - Entry type
+ * @property {number} score - Match score (1-100)
  */
 
 /**
@@ -55,37 +57,49 @@ export async function handler(args) {
   const availableDocs = await client.listDocs()
   const slugs = docSlugs || availableDocs.slice(0, 10).map(d => d.slug)
   
-  /** @type {SearchResult[]} */
-  const results = []
-  const lowerQuery = query.toLowerCase()
+  /** @type {Array<{name: string, path: string, doc: string, type?: string, text?: string}>} */
+  const allEntries = []
   
   for (const slug of slugs.slice(0, 5)) {
     try {
       const index = await client.getDocIndex(slug)
       const entries = index.entries || []
       
-      const matches = entries
-        .filter(e => e.name.toLowerCase().includes(lowerQuery))
-        .slice(0, limit)
-        .map(e => ({
-          name: e.name,
-          path: e.path,
+      for (const entry of entries) {
+        allEntries.push({
+          name: entry.name,
+          path: entry.path,
           doc: slug,
-          type: e.type
-        }))
-      
-      results.push(...matches)
+          type: entry.type,
+          text: normalizeString(entry.name)
+        })
+      }
     } catch {
       // Skip docs that fail to load
     }
-    
-    if (results.length >= limit) break
   }
+  
+  // Use fuzzy search with scoring
+  const results = search(allEntries, query, e => e.text, { limit })
+  
+  // Format results
+  const formatted = results.map(r => ({
+    name: r.item.name,
+    path: r.item.path,
+    doc: r.item.doc,
+    type: r.item.type,
+    score: r.score
+  }))
   
   return {
     content: [{
       type: "text",
-      text: JSON.stringify(results.slice(0, limit), null, 2)
-    }]
+      text: JSON.stringify(formatted, null, 2)
+    }],
+    _meta: {
+      query,
+      totalSearched: allEntries.length,
+      resultsReturned: formatted.length
+    }
   }
 }

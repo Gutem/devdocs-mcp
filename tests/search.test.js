@@ -28,30 +28,30 @@ describe("search tool", () => {
 
   describe("definition", () => {
     it("should have correct name", async () => {
-      const search = await import("../src/tools/search.js")
-      expect(search.definition.name).toBe("devdocs_search")
+      const searchTool = await import("../src/tools/search.js")
+      expect(searchTool.definition.name).toBe("devdocs_search")
     })
 
     it("should have required query parameter", async () => {
-      const search = await import("../src/tools/search.js")
-      expect(search.definition.inputSchema.required).toContain("query")
+      const searchTool = await import("../src/tools/search.js")
+      expect(searchTool.definition.inputSchema.required).toContain("query")
     })
 
     it("should have optional docs parameter", async () => {
-      const search = await import("../src/tools/search.js")
-      expect(search.definition.inputSchema.properties.docs).toBeDefined()
-      expect(search.definition.inputSchema.properties.docs.type).toBe("array")
+      const searchTool = await import("../src/tools/search.js")
+      expect(searchTool.definition.inputSchema.properties.docs).toBeDefined()
+      expect(searchTool.definition.inputSchema.properties.docs.type).toBe("array")
     })
 
     it("should have optional limit parameter", async () => {
-      const search = await import("../src/tools/search.js")
-      expect(search.definition.inputSchema.properties.limit).toBeDefined()
-      expect(search.definition.inputSchema.properties.limit.type).toBe("number")
+      const searchTool = await import("../src/tools/search.js")
+      expect(searchTool.definition.inputSchema.properties.limit).toBeDefined()
+      expect(searchTool.definition.inputSchema.properties.limit.type).toBe("number")
     })
   })
 
   describe("handler", () => {
-    it("should return search results", async () => {
+    it("should return search results with scores", async () => {
       mockResponses.set("docs.json", {
         ok: true,
         json: () => Promise.resolve([
@@ -63,7 +63,8 @@ describe("search tool", () => {
         ok: true,
         json: () => Promise.resolve({
           entries: [
-            { name: "Array.map", path: "Global_Objects/Array/map", type: "method" }
+            { name: "Array.map", path: "array/map", type: "method" },
+            { name: "Array.filter", path: "array/filter", type: "method" }
           ]
         })
       })
@@ -71,12 +72,42 @@ describe("search tool", () => {
       const { clearCache } = await import("../src/api/client.js")
       clearCache()
       
-      const search = await import("../src/tools/search.js")
-      const result = await search.handler({ query: "map" })
+      const searchTool = await import("../src/tools/search.js")
+      const result = await searchTool.handler({ query: "map" })
       
       expect(result.content[0].type).toBe("text")
       const data = JSON.parse(result.content[0].text)
-      expect(data.length).toBeGreaterThanOrEqual(0)
+      expect(data.length).toBeGreaterThan(0)
+      expect(data[0].score).toBeDefined()
+      expect(data[0].score).toBeGreaterThan(0)
+    })
+
+    it("should use fuzzy matching", async () => {
+      mockResponses.set("docs.json", {
+        ok: true,
+        json: () => Promise.resolve([
+          { name: "JavaScript", slug: "javascript" }
+        ])
+      })
+      
+      mockResponses.set("index.json", {
+        ok: true,
+        json: () => Promise.resolve({
+          entries: [
+            { name: "Array.prototype.map", path: "array/map", type: "method" }
+          ]
+        })
+      })
+
+      const { clearCache } = await import("../src/api/client.js")
+      clearCache()
+      
+      const searchTool = await import("../src/tools/search.js")
+      const result = await searchTool.handler({ query: "arry.map" })
+      
+      const data = JSON.parse(result.content[0].text)
+      expect(data.length).toBeGreaterThan(0)
+      expect(data[0].name).toContain("map")
     })
 
     it("should limit results", async () => {
@@ -101,8 +132,8 @@ describe("search tool", () => {
       const { clearCache } = await import("../src/api/client.js")
       clearCache()
       
-      const search = await import("../src/tools/search.js")
-      const result = await search.handler({ query: "map", limit: 5 })
+      const searchTool = await import("../src/tools/search.js")
+      const result = await searchTool.handler({ query: "map", limit: 5 })
       
       const data = JSON.parse(result.content[0].text)
       expect(data.length).toBeLessThanOrEqual(5)
@@ -121,13 +152,13 @@ describe("search tool", () => {
       const { clearCache } = await import("../src/api/client.js")
       clearCache()
       
-      const search = await import("../src/tools/search.js")
-      const result = await search.handler({ query: "test" })
+      const searchTool = await import("../src/tools/search.js")
+      const result = await searchTool.handler({ query: "test" })
       
       expect(result.content).toBeDefined()
     })
 
-    it("should search case-insensitively", async () => {
+    it("should include metadata", async () => {
       mockResponses.set("docs.json", {
         ok: true,
         json: () => Promise.resolve([
@@ -139,8 +170,7 @@ describe("search tool", () => {
         ok: true,
         json: () => Promise.resolve({
           entries: [
-            { name: "ARRAY", path: "array", type: "class" },
-            { name: "array", path: "array2", type: "class" }
+            { name: "Array.map", path: "array/map", type: "method" }
           ]
         })
       })
@@ -148,11 +178,12 @@ describe("search tool", () => {
       const { clearCache } = await import("../src/api/client.js")
       clearCache()
       
-      const search = await import("../src/tools/search.js")
-      const result = await search.handler({ query: "array" })
+      const searchTool = await import("../src/tools/search.js")
+      const result = await searchTool.handler({ query: "map" })
       
-      const data = JSON.parse(result.content[0].text)
-      expect(data).toHaveLength(2)
+      expect(result._meta).toBeDefined()
+      expect(result._meta.query).toBe("map")
+      expect(result._meta.totalSearched).toBeGreaterThan(0)
     })
   })
 })
