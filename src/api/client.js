@@ -1,9 +1,30 @@
+/**
+ * @fileoverview DevDocs API client for fetching documentation data
+ * @module api/client
+ */
+
+/** @type {string} Base URL for DevDocs main site */
 const BASE_URL = "https://devdocs.io"
+
+/** @type {string} Base URL for DevDocs documentation content */
 const DOCS_URL = "https://documents.devdocs.io"
 
+/** @type {Map<string, {data: any, timestamp: number}>} In-memory cache */
 const cache = new Map()
+
+/** @type {Map<string, Object<string, string>>} Doc database cache */
+const docDbCache = new Map()
+
+/** @type {number} Cache TTL in milliseconds (1 hour) */
 const CACHE_TTL = 60 * 60 * 1000
 
+/**
+ * Fetches JSON data with caching support
+ * @template T
+ * @param {string} url - URL to fetch
+ * @returns {Promise<T>} Parsed JSON data
+ * @throws {Error} If fetch fails
+ */
 async function fetch(url) {
   const cached = cache.get(url)
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
@@ -20,6 +41,30 @@ async function fetch(url) {
   return data
 }
 
+/**
+ * @typedef {Object} DocInfo
+ * @property {string} name - Display name (e.g., "JavaScript")
+ * @property {string} slug - URL slug (e.g., "javascript")
+ * @property {string} [version] - Version string (e.g., "ES2024")
+ * @property {string} release - Release version
+ * @property {string} [type] - Documentation type (e.g., "mdn")
+ * @property {Object} [links] - Related links
+ * @property {string} [links.home] - Homepage URL
+ * @property {string} [links.code] - Source code URL
+ * @property {number} mtime - Last modified timestamp
+ * @property {number} db_size - Database size in bytes
+ * @property {string} [attribution] - Attribution text
+ * @property {string|null} [alias] - Short alias
+ */
+
+/**
+ * Lists all available documentation packages
+ * @param {string|null} [filter=null] - Optional filter by name/slug/type
+ * @returns {Promise<DocInfo[]>} Array of documentation info
+ * @example
+ * const allDocs = await listDocs()
+ * const jsDocs = await listDocs('javascript')
+ */
 export async function listDocs(filter = null) {
   const docs = await fetch(`${BASE_URL}/docs.json`)
   
@@ -33,19 +78,67 @@ export async function listDocs(filter = null) {
   )
 }
 
+/**
+ * @typedef {Object} IndexEntry
+ * @property {string} name - Entry name
+ * @property {string} path - Entry path (without .html)
+ * @property {string} [type] - Entry type (e.g., "method", "class")
+ */
+
+/**
+ * @typedef {Object} DocIndex
+ * @property {IndexEntry[]} entries - Array of index entries
+ * @property {Object<string, number>} [types] - Count by type
+ */
+
+/**
+ * Gets the index for a documentation package
+ * @param {string} slug - Documentation slug (e.g., "javascript")
+ * @returns {Promise<DocIndex>} Documentation index
+ * @throws {Error} If documentation not found
+ * @example
+ * const index = await getDocIndex('javascript')
+ * console.log(index.entries.length) // Number of entries
+ */
 export async function getDocIndex(slug) {
   return fetch(`${DOCS_URL}/${slug}/index.json`)
 }
 
+/**
+ * Gets the HTML content of a documentation entry
+ * @param {string} slug - Documentation slug (e.g., "javascript")
+ * @param {string} path - Entry path (e.g., "Global_Objects/Array/map")
+ * @returns {Promise<string>} HTML content
+ * @throws {Error} If entry not found
+ * @example
+ * const html = await getDocEntry('javascript', 'Global_Objects/Array/map')
+ */
 export async function getDocEntry(slug, path) {
-  const url = `${DOCS_URL}/${slug}/${path}.html`
-  const response = await global.fetch(url)
-  if (!response.ok) {
+  const normalizedPath = path.toLowerCase()
+  
+  let db = docDbCache.get(slug)
+  if (!db) {
+    const response = await global.fetch(`${DOCS_URL}/${slug}/db.json`)
+    if (!response.ok) {
+      throw new Error(`Documentation not found: ${slug}`)
+    }
+    db = await response.json()
+    docDbCache.set(slug, db)
+  }
+  
+  const content = db[normalizedPath]
+  if (!content) {
     throw new Error(`Entry not found: ${slug}/${path}`)
   }
-  return response.text()
+  
+  return content
 }
 
+/**
+ * Clears all cached data
+ * @returns {void}
+ */
 export function clearCache() {
   cache.clear()
+  docDbCache.clear()
 }

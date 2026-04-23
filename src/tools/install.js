@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Tool: Install documentation for offline access
+ * @module tools/install
+ */
+
+/**
+ * Tool definition for installing documentation
+ * @type {import('@modelcontextprotocol/sdk/types.js').Tool}
+ */
 export const definition = {
   name: "devdocs_install",
   description: "Download/cache documentation for offline access",
@@ -14,6 +23,12 @@ export const definition = {
   }
 }
 
+/**
+ * Handler for devdocs_install tool
+ * @param {Object} args - Tool arguments
+ * @param {string[]} args.slugs - Documentation slugs to install
+ * @returns {Promise<import('@modelcontextprotocol/sdk/types.js').CallToolResult>} Tool result
+ */
 export async function handler(args) {
   const { slugs } = args
   
